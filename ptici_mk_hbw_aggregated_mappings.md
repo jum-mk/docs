@@ -1,4 +1,4 @@
-# EBP Data Aggregation Logic (Bulk Mode)
+# ptici.mk x EBP Data Aggregation Logic (Bulk Mode)
 
 This document outlines the validation and aggregation logic used to generate the **European Bird Portal (EBP)** export in **Bulk Mode** (`mode="B"`), specifically for `location_mode="A"` (Aggregated).
 
