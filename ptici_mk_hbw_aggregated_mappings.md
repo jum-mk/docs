@@ -1,6 +1,6 @@
-# EBP Data Export Logic (Bulk Mode)
+# ptici.mk x EBP Data Export Logic (Bulk Mode)
 
-This document outlines the logic used to generate the **European Bird Portal (EBP)** exports in **Bulk Mode** (`mode="B"`). The system is split into two distinct export streams/endpoints.
+This document outlines the logic in ptici.mk api used to generate the **European Bird Portal (EBP)** exports in **Bulk Mode** (`mode="B"`). The system is split into two distinct export streams/endpoints.
 
 ## 1. Aggregated Export (Casual & Direct)
 **Endpoint**: `/api/export_partner_json/`
