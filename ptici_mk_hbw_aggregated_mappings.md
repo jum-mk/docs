@@ -1,64 +1,71 @@
-# ptici.mk x EBP Data Aggregation Logic (Bulk Mode)
+# EBP Data Export Logic (Bulk Mode)
 
-This document outlines the validation and aggregation logic used to generate the **European Bird Portal (EBP)** export in **Bulk Mode** (`mode="B"`), specifically for `location_mode="A"` (Aggregated).
+This document outlines the logic used to generate the **European Bird Portal (EBP)** exports in **Bulk Mode** (`mode="B"`). The system is split into two distinct export streams/endpoints.
 
-## 1. Aggregation Strategy
-All bird observations (Casual, Transect, and Direct entries) sharing the same **10x10km Grid Cell** (`LAEA10x10`) and **Date** are grouped into a single **Event**.
+## 1. Aggregated Export (Casual & Direct)
+**Endpoint**: `/api/export_partner_json/`
+**Target Data**: Casual Observations and Direct Entries.
+**Location Mode**: `"A"` (Aggregated 10x10km Grid)
 
-- **Location Mode**: `"A"` (Aggregated)
-- **Data Type**: `"C"` (Casual/Aggregated)
-- **Protocol**: Omitted (Data from multiple sources/protocols is merged)
+### Aggregation Strategy
+All Casual and Direct entries sharing the same **10x10km Grid Cell** (`LAEA10x10`) and **Date** are grouped into a single **Event**.
 
-## 2. Event-Level Aggregation Rules
-Each aggregated event defines the context for the observations.
+### Event-Level Logic
+| **Key** | **Value / Logic** | **Notes** |
+| :--- | :--- | :--- |
+| `event_id` | `{LAEA10x10}_{UnixTimestamp}` | Unique identifier for location+date combo. |
+| `location` | 10x10km Grid Code | e.g., `10kmE353N212`. |
+| `date` | `YYYY-MM-DD` | Date of observations. |
+| `time` | `""` (Empty String) | Omitted for aggregated data. |
+| `location_mode` | `"A"` | Aggregated. |
+| `data_type` | `"C"` | Casual/Aggregated. |
+| `observer` | **Count** of unique User IDs | Number of distinct observers active in that grid/date. |
+| `records` | **Count** of unique (Species + Observer) combinations | Total distinct observation instances. |
+| `protocol_id` | `""` | Empty. |
 
-| **Key**         | **Value / Logic**                           | **EBP Compliance Note**                                          |
-|:----------------|:--------------------------------------------|:-----------------------------------------------------------------|
-| `event_id`      | `{LAEA10x10}_{UnixTimestamp}`               | Unique identifier for the location+date combo.                   |
-| `location`      | 10x10km Grid Code (e.g., `10kmE353N212`)    | Standard ETRS89-LAEA grid code.                                  |
-| `date`          | `YYYY-MM-DD`                                | Date of observations.                                            |
-| `time`          | `""` (Empty String)                         | **Removed** for `location_mode="A"` (covers whole day).          |
-| `observer`      | **Count** of unique User IDs (as string)    | "Number of different observers" (e.g., `"3"`).                   |
-| `records`       | **Count** of unique Species + Observer pairs| "Number of different combinations of observer and species".       |
-| `protocol_id`   | `""` (Empty String)                         | Blank as data is aggregated from multiple protocols.              |
-| `data_type`     | `"C"`                                       | Aggregated data is classified as Casual.                         |
+### Record-Level Logic
+Records are aggregated by **Species (HBW Code)** within the Event. Note that `records_of_species` and `count` aggregation differs from standard individual records.
 
-## 3. Record-Level Aggregation Rules
-Within each event, data is further grouped by **Species (HBW Code)**.
+| **Key** | **Value / Logic** | **Notes** |
+| :--- | :--- | :--- |
+| `record_id` | `{event_id}_{species_code}` | Unique record ID. |
+| `species_code` | HBW Species Code (Integer) | Mapped from `codename_hbw`. |
+| `count` | **Maximum** count recorded | Max count observed by any single observer for this species. |
+| `records_of_species` | **Count** of unique observers | Number of observers who saw this species. |
+| `breeding_code` | **Maximum** breeding code index | Highest EBBA2 code (0-16) recorded. |
+| `flying_over` | `"Y"`, `"N"`, or `""` | `"Y"` if ALL records are overflight, `"N"` if NONE, `""` if mixed. |
 
-| **Key**              | **Value / Logic**                       | **EBP Compliance Note**                                      |
-|:---------------------|:----------------------------------------|:-------------------------------------------------------------|
-| `record_id`          | `{event_id}_{species_code}`             | Unique record identifier.                                    |
-| `species_code`       | HBW Species Code (Integer)              | Mapped from internal species list. Entries without HBW codes are skipped. |
-| `count`              | **Maximum** count recorded              | "Maximum count of all records with counts".                  |
-| `records_of_species` | **Count** of unique observers           | "Number of different observers that have recorded the species". |
-| `breeding_code`      | **Maximum** breeding code index         | Highest EBBA2 code (0-16) recorded for this species in the event. |
-| `flying_over`        | `"Y"`, `"N"`, or `""`                   | `"Y"` if all flying, `"N"` if none flying. **Empty** if mixed behaviors (unclear) or unknown. |
+---
 
-## 4. Aggregation Example
+## 2. Transect Export (Standard/Complete Lists)
+**Endpoint**: `/api/export_transect_json/`
+**Target Data**: Transect Sessions.
+**Location Mode**: `"E"` (Exact/Event)
 
-**Input Data (Same Day, Same Grid `10kmE100N100`)**:
-1. **User A**: Sees 2 Robins (Breeding: 0)
-2. **User B**: Sees 1 Robin (Breeding: 2)
-3. **User A**: Sees 5 Blackbirds
+### Strategy
+Detailed export where **1 Session = 1 Event**. No aggregation across different user sessions.
 
-**Aggregated Output**:
+### Event-Level Logic
+| **Key** | **Value / Logic** | **Notes** |
+| :--- | :--- | :--- |
+| `event_id` | `{Session_ID}` | Direct Database ID of the Session. |
+| `location` | WKT Geometry | Point or Path (WKT format). Defaults to `POINT(0 0)` if missing. |
+| `date` | `YYYY-MM-DD` | Session Date. |
+| `time` | `HH:MM:SS` | Session Start Time. |
+| `duration` | Hours (Float) | Calculated as `End_Time - Start_Time`. |
+| `location_mode` | `"E"` | Exact/Event based. |
+| `data_type` | `"L"` (Complete) or `"F"` (Fixed) | Based on `is_list_complete` flag. |
+| `observer` | User ID | Specific observer ID. |
+| `records` | **Count** of unique species | Number of species in the list. |
+| `protocol_id` | `TRANSECT_STD` | Default protocol code (can be overridden via params). |
 
-**Event**:
-- `location`: `10kmE100N100`
-- `observer`: `"2"` (User A, User B)
-- `records`: `2` (Robin+UserA + Robin+UserB + Blackbird+UserA -> Wait! Robin+UserA is 1, Robin+UserB is 1, Blackbird+UserA is 1. Total = 3 combinations)
-    - *Correction*: The logic is unique (Species, Observer) tuples.
-        - (Robin, User A)
-        - (Robin, User B)
-        - (Blackbird, User A)
-    - Total `records` = 3.
+### Record-Level Logic
+Returns individual records for the session.
 
-**Records**:
-1. **Robin (`species_code`: 1234)**
-    - `count`: `2` (Max of 2 and 1)
-    - `records_of_species`: `2` (User A and User B)
-    - `breeding_code`: `2` (Max of 0 and 2)
-2. **Blackbird (`species_code`: 5678)**
-    - `count`: `5`
-    - `records_of_species`: `1` (User A)
+| **Key** | **Value / Logic** | **Notes** |
+| :--- | :--- | :--- |
+| `record_id` | `{Entry_ID}` | Direct Database ID of the Entry. |
+| `count` | `minimum_number` | Count observed. |
+| `records_of_species` | `1` | Strictly 1 for single-list exports. |
+| `flying_over` | `"Y"` or `"N"` | Direct mapping from boolean flag. |
+| `breeding_code` | Numeric Code (0-16) | EBBA2 standard. |
